@@ -26,8 +26,12 @@ public:
   ObstacleLaneChange() : Node("obstacle_lane_change")
   {
     currentObjLaneletId = INITLANELET;
+    currentLaneletId = INITLANELET;
+    lastObjLaneletId = INITLANELET;
     currentObjkey = INITCOUNT;
-    current_lane = INITCOUNT;
+    currentObjlane = INITCOUNT;
+    currentkey = INITCOUNT;
+    currentlane = INITCOUNT;
     detectFlag = false;
     pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>( "/localization/pose_estimator/pose", rclcpp::QoS{1}, std::bind(&ObstacleLaneChange::callbackPose, this, std::placeholders::_1));
     sub_vector_map_ = create_subscription<HADMapBin>("/map/vector_map", rclcpp::QoS(1).transient_local(), std::bind(&ObstacleLaneChange::callbackMap, this, std::placeholders::_1));
@@ -54,9 +58,13 @@ public:
   std::vector<LongIntVec> primitives2DVector;
   LongIntVec primitives;
   long int currentObjLaneletId;
+  long int currentLaneletId;
+  long int lastObjLaneletId;
   int laneNum;
   int currentObjkey;
   int currentObjlane;
+  int currentkey;
+  int currentlane;
   int nextObjlane;
   bool detectFlag; 
 
@@ -122,6 +130,8 @@ private:
     all_lanelets = lanelet::utils::query::laneletLayer(TR_lanelet_map_ptr_);
     road_lanelets_ = lanelet::utils::query::roadLanelets(all_lanelets);
     currentObjLaneletId = READYLANELET;
+    currentLaneletId = READYLANELET;
+    lastObjLaneletId = READYLANELET;
     RCLCPP_WARN(get_logger(), "Map load Done");
   }
 
@@ -138,21 +148,63 @@ private:
   {
     // std::cout << "obj get" << std::endl;
     obj_msg_ = msg;
-    // obj의 lanelet id를 획득하는 과정
+    // vector map 위에 존재하는 object의 lanelet id 획득
     for (const auto &obj : obj_msg_->objects)
     {
       lanelet::ConstLanelets start_lanelets;
-      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, obj.kinematics.initial_pose_with_covariance.pose, &start_lanelets)){
-        for (const auto & st_llt : start_lanelets){
+      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, obj.kinematics.initial_pose_with_covariance.pose, &start_lanelets))
+      {
+        for (const auto & st_llt : start_lanelets)
+        {
           currentObjLaneletId = st_llt.id();
           detectFlag = true;
-          // std::cout << currentObjLaneletId << std::endl;
         }
       }
     }
-    
+    // 장애물이 탐지된 경우
     if (detectFlag)
     {
+      // vector map 웨에 존재하는 ego 차량의 lanelet id 획득
+      geometry_msgs::msg::PoseStamped temp_pose_msg_;
+      // lock
+      temp_pose_msg_ = pose_msg_;
+      // lock done
+      lanelet::ConstLanelets start_lanelets;
+      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, temp_pose_msg_->pose, &start_lanelets))
+      {
+        for (const auto & st_llt : start_lanelets)
+        {
+          currentLaneletId = st_llt.id();
+        }      
+      }
+      // debug : 
+      // std::cout << "current ego vehicle lanelet id : " << currentLaneletId << std::endl;
+      // std::cout << "current ego vehicle lanelet id : " << currentLaneletId << std::endl;
+
+      // 현재 차량이 위치한 차로 찾기
+
+      currentkey = INITCOUNT;
+      for (const auto &lanes : primitives2DVector)
+      {
+        currentlane = INITCOUNT;
+        for (const auto &lane : lanes)
+        {
+          if (currentLaneletId == lane)
+          {
+            break;
+          }
+          currentlane++;
+        }
+        if (currentLaneletId == lanes[currentlane])
+        {
+            break;
+        }
+        currentkey++;
+      }
+
+      // 장애물이 정방에 존재하지 않을 수도 있는데? 
+      // ego 차량이 위치한 차선에 대한 정보도 필요
+      lastObjLaneletId = currentObjLaneletId;
       currentObjkey = INITCOUNT;
       for (const auto &lanes : primitives2DVector)
       {
@@ -171,16 +223,18 @@ private:
         }
         currentObjkey++;
       }
-      std::cout << "currentObjkey : " << currentObjkey << std::endl;
-      std::cout << "currentObjlane : " << currentObjlane << std::endl;
-      std::cout << "current lane id  : " << currentObjLaneletId << std::endl;
-      std::cout << "current lane id  : " << primitives2DVector[currentObjkey][currentObjlane] << std::endl;
-      std::cout << "next lanelet id  : " << primitives2DVector[currentObjkey+1][currentObjlane] << std::endl;
-      std::cout << "========================="<< std::endl;
-
       std::vector<LongIntVec> spilitPrimitives2DVector;
       spilitPrimitives2DVector = extractSubMatrix(primitives2DVector, currentObjkey, 0, currentObjkey+2, laneNum-1);
+      // std::cout << "currentObjkey : " << currentObjkey << std::endl;
+      // std::cout << "currentObjlane : " << currentObjlane << std::endl;
+      // std::cout << "current lane id  : " << currentObjLaneletId << std::endl;
+      // std::cout << "current lane id  : " << primitives2DVector[currentObjkey][currentObjlane] << std::endl;
+      // std::cout << "next lanelet id  : " << primitives2DVector[currentObjkey+1][currentObjlane] << std::endl;
+      // std::cout << "========================="<< std::endl;
 
+      // 차선 변경을 하기 위함
+      // 1/3차로 -> 2차로 
+      // 2차로 -> 3차로
       switch (currentObjlane)
       {
       case 1:
@@ -193,6 +247,8 @@ private:
       default:
         break;
       }
+
+      // topic publish
       autoware_planning_msgs::msg::LaneletRoute route_msg_;
       route_msg_.header.stamp = this->get_clock()->now();
       route_msg_.header.frame_id = "map";
