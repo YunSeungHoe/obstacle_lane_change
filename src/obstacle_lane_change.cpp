@@ -103,10 +103,7 @@ private:
     }
     return return2DVec;
   }
-
-  std::vector<std::vector<long int>> extractSubMatrix(
-    const std::vector<std::vector<long int>>& matrix,
-    int startRow, int startCol, int endRow, int endCol) 
+  std::vector<std::vector<long int>> extractSubMatrix(const std::vector<std::vector<long int>>& matrix, int startRow, int startCol, int endRow, int endCol) 
   {
     std::vector<std::vector<long int>> subMatrix;
 
@@ -120,7 +117,6 @@ private:
 
     return subMatrix;
   }
-
   void callbackMap(const HADMapBin::ConstSharedPtr msg)
   {
     TR_map_ptr_ = msg;
@@ -135,15 +131,14 @@ private:
     RCLCPP_WARN(get_logger(), "Map load Done");
   }
 
-// pose 에서 처리할게 아님
   void callbackPose(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
   {
     // lock 
     pose_msg_ = msg;
   }
 
-// object callback 에서 처리해야 함
-// /perception/object_recognition/objects
+  // object callback 에서 처리해야 함
+  // /perception/object_recognition/objects
   void callbackObject(const AutoPredictedObj::ConstSharedPtr msg)
   {
     // std::cout << "obj get" << std::endl;
