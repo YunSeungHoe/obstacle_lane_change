@@ -180,12 +180,12 @@ private:
     if (detectFlag)
     {
       // vector map 웨에 존재하는 ego 차량의 lanelet id 획득
-      geometry_msgs::msg::PoseStamped temp_pose_msg_;
+      // geometry_msgs::msg::PoseStamped temp_pose_msg_;
       // lock
-      temp_pose_msg_ = pose_msg_;
+      // temp_pose_msg_ = pose_msg_;
       // lock done
       lanelet::ConstLanelets start_lanelets;
-      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, temp_pose_msg_->pose, &start_lanelets))
+      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_.pose, &start_lanelets))
       {
         for (const auto & st_llt : start_lanelets)
         {
@@ -271,7 +271,7 @@ private:
       autoware_planning_msgs::msg::LaneletRoute route_msg_;
       route_msg_.header.stamp = this->get_clock()->now();
       route_msg_.header.frame_id = "map";
-      route_msg_.start_pose = temp_pose_msg_->pose;
+      route_msg_.start_pose = pose_msg_.pose;
 // key 그대로 idx로 사용
       route_msg_.goal_pose.position.x = goalPosition_x[currentObjkey]; 
       route_msg_.goal_pose.position.y = goalPosition_y[currentObjkey]; 
