@@ -40,6 +40,16 @@ public:
 
     this->declare_parameter<LongIntVec>("primitives", LongIntVec({}));
     primitives = this->get_parameter("primitives").as_integer_array();
+    this->declare_parameter<LongIntVec>("pit_stop_primitives", LongIntVec({}));
+    pitStopPrimitives = this->get_parameter("pit_stop_primitives").as_integer_array();
+    this->declare_parameter<LongIntVec>("goal_pose.position.x", LongIntVec({}));
+    this->declare_parameter<LongIntVec>("goal_pose.position.y", LongIntVec({}));
+    this->declare_parameter<LongIntVec>("goal_pose.orientation.z", LongIntVec({}));
+    this->declare_parameter<LongIntVec>("goal_pose.orientation.w", LongIntVec({}));
+    goalPosition_x = this->get_parameter("goal_pose.position.x").as_integer_array();
+    goalPosition_y = this->get_parameter("goal_pose.position.y").as_integer_array();
+    goalOrientation_z = this->get_parameter("goal_pose.orientation.z").as_integer_array();
+    goalOrientation_w = this->get_parameter("goal_pose.orientation.w").as_integer_array();
     this->declare_parameter<int>("lane_number", int());
     laneNum = this->get_parameter("lane_number").as_int();
     primitives2DVector = setPrimitiveVector(primitives, laneNum);
@@ -57,6 +67,12 @@ public:
 
   std::vector<LongIntVec> primitives2DVector;
   LongIntVec primitives;
+  LongIntVec pitStopPrimitives;
+  LongIntVec goalPosition_x;
+  LongIntVec goalPosition_y;
+  LongIntVec goalOrientation_z;
+  LongIntVec goalOrientation_w;
+
   long int currentObjLaneletId;
   long int currentLaneletId;
   long int lastObjLaneletId;
@@ -151,6 +167,10 @@ private:
       {
         for (const auto & st_llt : start_lanelets)
         {
+          if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
+          {
+            continue;
+          }
           currentObjLaneletId = st_llt.id();
           detectFlag = true;
         }
@@ -169,6 +189,10 @@ private:
       {
         for (const auto & st_llt : start_lanelets)
         {
+          if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
+          {
+            continue;
+          }
           currentLaneletId = st_llt.id();
         }      
       }
@@ -219,7 +243,7 @@ private:
         currentObjkey++;
       }
       std::vector<LongIntVec> spilitPrimitives2DVector;
-      spilitPrimitives2DVector = extractSubMatrix(primitives2DVector, currentObjkey, 0, currentObjkey+2, laneNum-1);
+      spilitPrimitives2DVector = extractSubMatrix(primitives2DVector, currentkey, 0, currentObjkey+1, laneNum-1);
       // std::cout << "currentObjkey : " << currentObjkey << std::endl;
       // std::cout << "currentObjlane : " << currentObjlane << std::endl;
       // std::cout << "current lane id  : " << currentObjLaneletId << std::endl;
@@ -247,16 +271,16 @@ private:
       autoware_planning_msgs::msg::LaneletRoute route_msg_;
       route_msg_.header.stamp = this->get_clock()->now();
       route_msg_.header.frame_id = "map";
-      route_msg_.start_pose = pose_msg_->pose;
-
-      route_msg_.goal_pose.position.x = 387.696; 
-      route_msg_.goal_pose.position.y = 28.525; 
+      route_msg_.start_pose = temp_pose_msg_->pose;
+// key 그대로 idx로 사용
+      route_msg_.goal_pose.position.x = goalPosition_x[currentObjkey]; 
+      route_msg_.goal_pose.position.y = goalPosition_y[currentObjkey]; 
       route_msg_.goal_pose.position.z = 0.0;
           
       route_msg_.goal_pose.orientation.x = 0.0;
       route_msg_.goal_pose.orientation.y = 0.0;
-      route_msg_.goal_pose.orientation.z = -0.7;  
-      route_msg_.goal_pose.orientation.w = 0.7;
+      route_msg_.goal_pose.orientation.z = goalOrientation_z[currentObjkey];  
+      route_msg_.goal_pose.orientation.w = goalOrientation_w[currentObjkey];
 
       for (const auto &out_lane_id : spilitPrimitives2DVector)
       {
