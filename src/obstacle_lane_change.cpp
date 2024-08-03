@@ -42,14 +42,14 @@ public:
     primitives = this->get_parameter("primitives").as_integer_array();
     this->declare_parameter<LongIntVec>("pit_stop_primitives", LongIntVec({}));
     pitStopPrimitives = this->get_parameter("pit_stop_primitives").as_integer_array();
-    this->declare_parameter<LongIntVec>("goal_pose.position.x", LongIntVec({}));
-    this->declare_parameter<LongIntVec>("goal_pose.position.y", LongIntVec({}));
-    this->declare_parameter<LongIntVec>("goal_pose.orientation.z", LongIntVec({}));
-    this->declare_parameter<LongIntVec>("goal_pose.orientation.w", LongIntVec({}));
-    goalPosition_x = this->get_parameter("goal_pose.position.x").as_integer_array();
-    goalPosition_y = this->get_parameter("goal_pose.position.y").as_integer_array();
-    goalOrientation_z = this->get_parameter("goal_pose.orientation.z").as_integer_array();
-    goalOrientation_w = this->get_parameter("goal_pose.orientation.w").as_integer_array();
+    this->declare_parameter<DoubleVec>("goal_pose.position.x", DoubleVec({}));
+    this->declare_parameter<DoubleVec>("goal_pose.position.y", DoubleVec({}));
+    this->declare_parameter<DoubleVec>("goal_pose.orientation.z", DoubleVec({}));
+    this->declare_parameter<DoubleVec>("goal_pose.orientation.w", DoubleVec({}));
+    goalPosition_x = this->get_parameter("goal_pose.position.x").as_double_array();
+    goalPosition_y = this->get_parameter("goal_pose.position.y").as_double_array();
+    goalOrientation_z = this->get_parameter("goal_pose.orientation.z").as_double_array();
+    goalOrientation_w = this->get_parameter("goal_pose.orientation.w").as_double_array();
     this->declare_parameter<int>("lane_number", int());
     laneNum = this->get_parameter("lane_number").as_int();
     primitives2DVector = setPrimitiveVector(primitives, laneNum);
@@ -68,10 +68,10 @@ public:
   std::vector<LongIntVec> primitives2DVector;
   LongIntVec primitives;
   LongIntVec pitStopPrimitives;
-  LongIntVec goalPosition_x;
-  LongIntVec goalPosition_y;
-  LongIntVec goalOrientation_z;
-  LongIntVec goalOrientation_w;
+  DoubleVec goalPosition_x;
+  DoubleVec goalPosition_y;
+  DoubleVec goalOrientation_z;
+  DoubleVec goalOrientation_w;
 
   long int currentObjLaneletId;
   long int currentLaneletId;
@@ -157,7 +157,7 @@ private:
   // /perception/object_recognition/objects
   void callbackObject(const AutoPredictedObj::ConstSharedPtr msg)
   {
-    // std::cout << "obj get" << std::endl;
+    std::cout << "obj get" << std::endl;
     obj_msg_ = msg;
     // vector map 위에 존재하는 object의 lanelet id 획득
     for (const auto &obj : obj_msg_->objects)
@@ -167,25 +167,27 @@ private:
       {
         for (const auto & st_llt : start_lanelets)
         {
-          if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
-          {
-            continue;
-          }
+          // if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
+          // {
+          //   continue;
+          // }
           currentObjLaneletId = st_llt.id();
           detectFlag = true;
         }
       }
     }
+
     // 장애물이 탐지된 경우
     if (detectFlag)
     {
+      std::cout << "detect!!" << std::endl; 
       // vector map 웨에 존재하는 ego 차량의 lanelet id 획득
-      geometry_msgs::msg::PoseStamped temp_pose_msg_;
+      // geometry_msgs::msg::PoseStamped::ConstSharedPtr temp_pose_msg_;
       // lock
-      temp_pose_msg_ = pose_msg_;
+      // temp_pose_msg_ = pose_msg_;
       // lock done
       lanelet::ConstLanelets start_lanelets;
-      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, temp_pose_msg_->pose, &start_lanelets))
+      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_->pose, &start_lanelets))
       {
         for (const auto & st_llt : start_lanelets)
         {
@@ -271,7 +273,7 @@ private:
       autoware_planning_msgs::msg::LaneletRoute route_msg_;
       route_msg_.header.stamp = this->get_clock()->now();
       route_msg_.header.frame_id = "map";
-      route_msg_.start_pose = temp_pose_msg_->pose;
+      route_msg_.start_pose = pose_msg_->pose;
 // key 그대로 idx로 사용
       route_msg_.goal_pose.position.x = goalPosition_x[currentObjkey]; 
       route_msg_.goal_pose.position.y = goalPosition_y[currentObjkey]; 
