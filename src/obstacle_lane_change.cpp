@@ -14,7 +14,7 @@
 #include <obstacle_lane_change/obstacle_lane_change_plugin.hpp>
 #include <autoware_planning_msgs/msg/lanelet_route.hpp>
 #include <autoware_auto_perception_msgs/msg/predicted_objects.hpp> 
-#include <avante_msgs/msg/lane_change_check.hpp>
+#include <autoware_planning_msgs/msg/lane_change_check.hpp>
 
 using HADMapBin = autoware_auto_mapping_msgs::msg::HADMapBin;
 using AutoPredictedObj = autoware_auto_perception_msgs::msg::PredictedObjects;
@@ -40,7 +40,7 @@ public:
     sub_vector_map_ = create_subscription<HADMapBin>("/map/vector_map", rclcpp::QoS(1).transient_local(), std::bind(&ObstacleLaneChange::callbackMap, this, std::placeholders::_1));
     object_sub_ = create_subscription<autoware_auto_perception_msgs::msg::PredictedObjects>("/perception/object_recognition/objects", rclcpp::QoS(1), std::bind(&ObstacleLaneChange::callbackObject, this,  std::placeholders::_1));
     route_pub_= create_publisher<autoware_planning_msgs::msg::LaneletRoute>("/planning/obstacle_lane_change/route", rclcpp::QoS{1}.transient_local());
-    lane_change_check_pub_= create_publisher<avante_msgs::msg::LaneChangeCheck>("/planning/lane_change_check", rclcpp::QoS{1});
+    lane_change_check_pub_= create_publisher<autoware_planning_msgs::msg::LaneChangeCheck>("/planning/lane_change_check", rclcpp::QoS{1});
 
     this->declare_parameter<LongIntVec>("primitives", LongIntVec({}));
     primitives = this->get_parameter("primitives").as_integer_array();
@@ -61,7 +61,7 @@ public:
     goalPosition_y2DVec = setPrimitiveVector(goalPosition_y, laneNum);
   
   }
-  avante_msgs::msg::LaneChangeCheck lcc_msg_;
+  autoware_planning_msgs::msg::LaneChangeCheck lcc_msg_;
   lanelet::LaneletMapPtr TR_lanelet_map_ptr_;
   HADMapBin::ConstSharedPtr TR_map_ptr_;
   lanelet::ConstLanelets all_lanelets;
@@ -99,7 +99,7 @@ public:
   rclcpp::Subscription<HADMapBin>::SharedPtr sub_vector_map_;
   rclcpp::Subscription<autoware_auto_perception_msgs::msg::PredictedObjects>::SharedPtr object_sub_;
   rclcpp::Publisher<autoware_planning_msgs::msg::LaneletRoute>::SharedPtr route_pub_;
-  rclcpp::Publisher<avante_msgs::msg::LaneChangeCheck>::SharedPtr lane_change_check_pub_;
+  rclcpp::Publisher<autoware_planning_msgs::msg::LaneChangeCheck>::SharedPtr lane_change_check_pub_;
 
 private:
   std::vector<LongIntVec> setPrimitiveVector(const LongIntVec& vec, size_t laneletNum)
@@ -196,20 +196,11 @@ private:
     {
       std::cout << "detection object on lanes" << std::endl; 
       // vector map 웨에 존재하는 ego 차량의 lanelet id 획득
-<<<<<<< HEAD
-      // geometry_msgs::msg::PoseStamped temp_pose_msg_;
-=======
-      // geometry_msgs::msg::PoseStamped::ConstSharedPtr temp_pose_msg_;
->>>>>>> ichthus_pc
       // lock
       // temp_pose_msg_ = pose_msg_;
       // lock done
       lanelet::ConstLanelets start_lanelets;
-<<<<<<< HEAD
-      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_.pose, &start_lanelets))
-=======
       if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_->pose, &start_lanelets))
->>>>>>> ichthus_pc
       {
         for (const auto & st_llt : start_lanelets)
         {
@@ -312,12 +303,8 @@ private:
       autoware_planning_msgs::msg::LaneletRoute route_msg_;
       route_msg_.header.stamp = this->get_clock()->now();
       route_msg_.header.frame_id = "map";
-<<<<<<< HEAD
-      route_msg_.start_pose = pose_msg_.pose;
-=======
       route_msg_.start_pose = pose_msg_->pose;
->>>>>>> ichthus_pc
-// key 그대로 idx로 사용
+
       std::cout << "currentObjkey : " << currentObjkey << std::endl;
       route_msg_.goal_pose.position.x = goalPosition_x2DVec[currentObjkey][currentObjlane]; 
       route_msg_.goal_pose.position.y = goalPosition_y2DVec[currentObjkey][currentObjlane]; 
