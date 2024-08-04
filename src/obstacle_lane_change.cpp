@@ -14,6 +14,7 @@
 #include <obstacle_lane_change/obstacle_lane_change_plugin.hpp>
 #include <autoware_planning_msgs/msg/lanelet_route.hpp>
 #include <autoware_auto_perception_msgs/msg/predicted_objects.hpp> 
+#include <avante_msgs/msg/lane_change_check.hpp>
 
 using HADMapBin = autoware_auto_mapping_msgs::msg::HADMapBin;
 using AutoPredictedObj = autoware_auto_perception_msgs::msg::PredictedObjects;
@@ -32,28 +33,35 @@ public:
     currentObjlane = INITCOUNT;
     currentkey = INITCOUNT;
     currentlane = INITCOUNT;
+    lastlane = INITCOUNT;
     detectFlag = false;
+    lcc_msg_.changeflag = true;
     pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>( "/localization/pose_estimator/pose", rclcpp::QoS{1}, std::bind(&ObstacleLaneChange::callbackPose, this, std::placeholders::_1));
     sub_vector_map_ = create_subscription<HADMapBin>("/map/vector_map", rclcpp::QoS(1).transient_local(), std::bind(&ObstacleLaneChange::callbackMap, this, std::placeholders::_1));
     object_sub_ = create_subscription<autoware_auto_perception_msgs::msg::PredictedObjects>("/perception/object_recognition/objects", rclcpp::QoS(1), std::bind(&ObstacleLaneChange::callbackObject, this,  std::placeholders::_1));
-    route_pub_= create_publisher<autoware_planning_msgs::msg::LaneletRoute>("/planning/mission_planning/route", rclcpp::QoS{1}.transient_local());
+    route_pub_= create_publisher<autoware_planning_msgs::msg::LaneletRoute>("/planning/obstacle_lane_change/route", rclcpp::QoS{1}.transient_local());
+    lane_change_check_pub_= create_publisher<avante_msgs::msg::LaneChangeCheck>("/planning/lane_change_check", rclcpp::QoS{1});
 
     this->declare_parameter<LongIntVec>("primitives", LongIntVec({}));
     primitives = this->get_parameter("primitives").as_integer_array();
     this->declare_parameter<LongIntVec>("pit_stop_primitives", LongIntVec({}));
     pitStopPrimitives = this->get_parameter("pit_stop_primitives").as_integer_array();
-    this->declare_parameter<LongIntVec>("goal_pose.position.x", LongIntVec({}));
-    this->declare_parameter<LongIntVec>("goal_pose.position.y", LongIntVec({}));
-    this->declare_parameter<LongIntVec>("goal_pose.orientation.z", LongIntVec({}));
-    this->declare_parameter<LongIntVec>("goal_pose.orientation.w", LongIntVec({}));
-    goalPosition_x = this->get_parameter("goal_pose.position.x").as_integer_array();
-    goalPosition_y = this->get_parameter("goal_pose.position.y").as_integer_array();
-    goalOrientation_z = this->get_parameter("goal_pose.orientation.z").as_integer_array();
-    goalOrientation_w = this->get_parameter("goal_pose.orientation.w").as_integer_array();
+    this->declare_parameter<DoubleVec>("goal_pose.position.x", DoubleVec({}));
+    this->declare_parameter<DoubleVec>("goal_pose.position.y", DoubleVec({}));
+    this->declare_parameter<DoubleVec>("goal_pose.orientation.z", DoubleVec({}));
+    this->declare_parameter<DoubleVec>("goal_pose.orientation.w", DoubleVec({}));
+    goalPosition_x = this->get_parameter("goal_pose.position.x").as_double_array();
+    goalPosition_y = this->get_parameter("goal_pose.position.y").as_double_array();
+    goalOrientation_z = this->get_parameter("goal_pose.orientation.z").as_double_array();
+    goalOrientation_w = this->get_parameter("goal_pose.orientation.w").as_double_array();
     this->declare_parameter<int>("lane_number", int());
     laneNum = this->get_parameter("lane_number").as_int();
     primitives2DVector = setPrimitiveVector(primitives, laneNum);
+    goalPosition_x2DVec = setPrimitiveVector(goalPosition_x, laneNum);
+    goalPosition_y2DVec = setPrimitiveVector(goalPosition_y, laneNum);
+  
   }
+  avante_msgs::msg::LaneChangeCheck lcc_msg_;
   lanelet::LaneletMapPtr TR_lanelet_map_ptr_;
   HADMapBin::ConstSharedPtr TR_map_ptr_;
   lanelet::ConstLanelets all_lanelets;
@@ -65,13 +73,15 @@ public:
   autoware_planning_msgs::msg::LaneletSegment emptySegment;
   autoware_planning_msgs::msg::LaneletPrimitive primitive;
 
+  std::vector<DoubleVec> goalPosition_x2DVec;
+  std::vector<DoubleVec> goalPosition_y2DVec;
   std::vector<LongIntVec> primitives2DVector;
   LongIntVec primitives;
   LongIntVec pitStopPrimitives;
-  LongIntVec goalPosition_x;
-  LongIntVec goalPosition_y;
-  LongIntVec goalOrientation_z;
-  LongIntVec goalOrientation_w;
+  DoubleVec goalPosition_x;
+  DoubleVec goalPosition_y;
+  DoubleVec goalOrientation_z;
+  DoubleVec goalOrientation_w;
 
   long int currentObjLaneletId;
   long int currentLaneletId;
@@ -81,6 +91,7 @@ public:
   int currentObjlane;
   int currentkey;
   int currentlane;
+  int lastlane;
   int nextObjlane;
   bool detectFlag; 
 
@@ -88,6 +99,8 @@ public:
   rclcpp::Subscription<HADMapBin>::SharedPtr sub_vector_map_;
   rclcpp::Subscription<autoware_auto_perception_msgs::msg::PredictedObjects>::SharedPtr object_sub_;
   rclcpp::Publisher<autoware_planning_msgs::msg::LaneletRoute>::SharedPtr route_pub_;
+  rclcpp::Publisher<avante_msgs::msg::LaneChangeCheck>::SharedPtr lane_change_check_pub_;
+
 private:
   std::vector<LongIntVec> setPrimitiveVector(const LongIntVec& vec, size_t laneletNum)
   {
@@ -146,7 +159,6 @@ private:
     lastObjLaneletId = READYLANELET;
     RCLCPP_WARN(get_logger(), "Map load Done");
   }
-
   void callbackPose(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
   {
     // lock 
@@ -167,25 +179,37 @@ private:
       {
         for (const auto & st_llt : start_lanelets)
         {
-          if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
-          {
-            continue;
-          }
+          // if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
+          // {
+          //   continue;
+          // }
           currentObjLaneletId = st_llt.id();
           detectFlag = true;
         }
       }
     }
-    // 장애물이 탐지된 경우
+
+    // 장애물이 탐지된 경우 한번의 스캔에서 여러개 나온 경우는? 
+    // TODO : 다수의 장애물이 한번의 스캔에 있는 경우 => 장애물의 정보를 vector로 생성해서 다수의 장애물의 대해 처리
+    // example : 장애물까지의 거리를 예로 들 수 있음 가까운 장애물만 판단?  
     if (detectFlag)
     {
+      std::cout << "detection object on lanes" << std::endl; 
       // vector map 웨에 존재하는 ego 차량의 lanelet id 획득
+<<<<<<< HEAD
       // geometry_msgs::msg::PoseStamped temp_pose_msg_;
+=======
+      // geometry_msgs::msg::PoseStamped::ConstSharedPtr temp_pose_msg_;
+>>>>>>> ichthus_pc
       // lock
       // temp_pose_msg_ = pose_msg_;
       // lock done
       lanelet::ConstLanelets start_lanelets;
+<<<<<<< HEAD
       if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_.pose, &start_lanelets))
+=======
+      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_->pose, &start_lanelets))
+>>>>>>> ichthus_pc
       {
         for (const auto & st_llt : start_lanelets)
         {
@@ -201,7 +225,6 @@ private:
       // std::cout << "current ego vehicle lanelet id : " << currentLaneletId << std::endl;
 
       // 현재 차량이 위치한 차로 찾기
-
       currentkey = INITCOUNT;
       for (const auto &lanes : primitives2DVector)
       {
@@ -221,8 +244,21 @@ private:
         currentkey++;
       }
 
-      // 장애물이 정방에 존재하지 않을 수도 있는데? 
+      if(!lcc_msg_.changeflag) 
+      {
+        if(currentlane != lastlane) 
+        {
+          lcc_msg_.changeflag = true;
+          lane_change_check_pub_->publish(lcc_msg_);
+          std::cout << "currentlane != lastlane (lcc_msg_ : true)" << std::endl;
+          return;
+        }
+        std::cout << "waiting for lane change.. (lcc_msg_ : false)" << std::endl;
+        return;
+      }
+      // 장애물이 전방에 존재하지 않을 수도 있는데? 
       // ego 차량이 위치한 차선에 대한 정보도 필요
+      // std::cout << "current obj lanelet id : " << currentObjLaneletId << std::endl;
       lastObjLaneletId = currentObjLaneletId;
       currentObjkey = INITCOUNT;
       for (const auto &lanes : primitives2DVector)
@@ -251,6 +287,11 @@ private:
       // std::cout << "next lanelet id  : " << primitives2DVector[currentObjkey+1][currentObjlane] << std::endl;
       // std::cout << "========================="<< std::endl;
 
+      if(currentlane != currentObjlane) 
+      {
+        std::cout << "obj lane and ego lane ID is not same" << std::endl;
+        return;
+      }
       // 차선 변경을 하기 위함
       // 1/3차로 -> 2차로 
       // 2차로 -> 3차로
@@ -271,10 +312,15 @@ private:
       autoware_planning_msgs::msg::LaneletRoute route_msg_;
       route_msg_.header.stamp = this->get_clock()->now();
       route_msg_.header.frame_id = "map";
+<<<<<<< HEAD
       route_msg_.start_pose = pose_msg_.pose;
+=======
+      route_msg_.start_pose = pose_msg_->pose;
+>>>>>>> ichthus_pc
 // key 그대로 idx로 사용
-      route_msg_.goal_pose.position.x = goalPosition_x[currentObjkey]; 
-      route_msg_.goal_pose.position.y = goalPosition_y[currentObjkey]; 
+      std::cout << "currentObjkey : " << currentObjkey << std::endl;
+      route_msg_.goal_pose.position.x = goalPosition_x2DVec[currentObjkey][currentObjlane]; 
+      route_msg_.goal_pose.position.y = goalPosition_y2DVec[currentObjkey][currentObjlane]; 
       route_msg_.goal_pose.position.z = 0.0;
           
       route_msg_.goal_pose.orientation.x = 0.0;
@@ -297,7 +343,10 @@ private:
         route_msg_.segments.push_back(segment);
       }
       route_msg_.uuid.uuid = {209, 239, 15, 91, 197, 87, 68, 179, 62, 19, 3, 36, 111, 114, 35, 231};
+      lcc_msg_.changeflag = false;
+      lane_change_check_pub_->publish(lcc_msg_);
       route_pub_->publish(route_msg_);
+      lastlane = currentlane;
       std::cout << "Lane Change trajectory publish" << std::endl;
     }
   }
