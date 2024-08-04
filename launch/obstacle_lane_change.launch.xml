@@ -1,5 +1,5 @@
 <launch>
-  <arg name="lanechange_table_param_path" default="$(find-pkg-share obstacle_lane_change)/config/240720_KIAPI_lanechange_table.yaml"/>
+  <arg name="lanechange_table_param_path" default="$(find-pkg-share obstacle_lane_change)/config/lanechange_table.yaml"/>
   <node pkg="obstacle_lane_change" exec="obstacle_lane_change" name="obstacle_lane_change" output="screen">
     <param from="$(var lanechange_table_param_path)"/>
   </node>
