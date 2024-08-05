@@ -76,6 +76,7 @@ public:
   std::vector<DoubleVec> goalPosition_x2DVec;
   std::vector<DoubleVec> goalPosition_y2DVec;
   std::vector<LongIntVec> primitives2DVector;
+  std::vector<LongIntVec> roi_lanelets;
   LongIntVec primitives;
   LongIntVec pitStopPrimitives;
   DoubleVec goalPosition_x;
@@ -161,17 +162,51 @@ private:
   }
   void callbackPose(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
   {
-    // lock 
     pose_msg_ = msg;
   }
 
-  // object callback 에서 처리해야 함
-  // /perception/object_recognition/objects
   void callbackObject(const AutoPredictedObj::ConstSharedPtr msg)
   {
-    // std::cout << "obj get" << std::endl;
     obj_msg_ = msg;
-    // vector map 위에 존재하는 object의 lanelet id 획득
+    lanelet::ConstLanelets start_lanelets;
+    if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_->pose, &start_lanelets))
+    {
+      for (const auto & st_llt : start_lanelets)
+      {
+        if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
+        {
+          continue;
+        }
+        currentLaneletId = st_llt.id();
+      }      
+    }
+    if (currentLaneletId == -1) return;
+    std::cout << "Get Currentlane id " << currentLaneletId << std::endl;
+
+    // 현재 차량이 위치한 차로 찾기
+    currentkey = INITCOUNT;
+    for (const auto &lanes : primitives2DVector)
+    {
+      currentlane = INITCOUNT;
+      for (const auto &lane : lanes)
+      {
+        if (currentLaneletId == lane)
+        {
+          break;
+        }
+        currentlane++;
+      }
+      if (currentLaneletId == lanes[currentlane])
+      {
+          break;
+      }
+      currentkey++;
+    }
+    std::cout << "Get Currentlane Key " << currentkey << std::endl;
+    std::cout << "Get Currentlane Lane # " << currentlane << std::endl;
+    roi_lanelets = extractSubMatrix(primitives2DVector, currentkey, 0, currentkey+2, laneNum-1);
+    std::cout << "ROI primitives split Done ! " << std::endl;
+
     for (const auto &obj : obj_msg_->objects)
     {
       lanelet::ConstLanelets start_lanelets;
@@ -179,62 +214,28 @@ private:
       {
         for (const auto & st_llt : start_lanelets)
         {
-          // if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
-          // {
-          //   continue;
-          // }
           currentObjLaneletId = st_llt.id();
-          detectFlag = true;
+          // SH 장애물이 현재 차량이 있는 laneletid와 +1 laneletid만 탐지
+          for (const auto &lane : roi_lanelets)
+          {
+            for (const auto &inner_lane : lane)
+            {
+              if (inner_lane == currentObjLaneletId) 
+              {
+                detectFlag = true;
+              }
+            }
+          }
         }
       }
     }
-
     // 장애물이 탐지된 경우 한번의 스캔에서 여러개 나온 경우는? 
     // TODO : 다수의 장애물이 한번의 스캔에 있는 경우 => 장애물의 정보를 vector로 생성해서 다수의 장애물의 대해 처리
     // example : 장애물까지의 거리를 예로 들 수 있음 가까운 장애물만 판단?  
     if (detectFlag)
     {
       std::cout << "detection object on lanes" << std::endl; 
-      // vector map 웨에 존재하는 ego 차량의 lanelet id 획득
-      // lock
-      // temp_pose_msg_ = pose_msg_;
-      // lock done
-      lanelet::ConstLanelets start_lanelets;
-      if (lanelet::utils::query::getCurrentLanelets(road_lanelets_, pose_msg_->pose, &start_lanelets))
-      {
-        for (const auto & st_llt : start_lanelets)
-        {
-          if(find(pitStopPrimitives.begin(), pitStopPrimitives.end(), st_llt.id()) != pitStopPrimitives.end()) 
-          {
-            continue;
-          }
-          currentLaneletId = st_llt.id();
-        }      
-      }
-      // debug : 
-      // std::cout << "current ego vehicle lanelet id : " << currentLaneletId << std::endl;
-      // std::cout << "current ego vehicle lanelet id : " << currentLaneletId << std::endl;
-
-      // 현재 차량이 위치한 차로 찾기
-      currentkey = INITCOUNT;
-      for (const auto &lanes : primitives2DVector)
-      {
-        currentlane = INITCOUNT;
-        for (const auto &lane : lanes)
-        {
-          if (currentLaneletId == lane)
-          {
-            break;
-          }
-          currentlane++;
-        }
-        if (currentLaneletId == lanes[currentlane])
-        {
-            break;
-        }
-        currentkey++;
-      }
-
+      
       if(!lcc_msg_.changeflag) 
       {
         if(currentlane != lastlane) 
@@ -270,7 +271,8 @@ private:
         currentObjkey++;
       }
       std::vector<LongIntVec> spilitPrimitives2DVector;
-      spilitPrimitives2DVector = extractSubMatrix(primitives2DVector, currentkey, 0, currentObjkey+1, laneNum-1);
+      // carla : currentObjkey+2 / Kiapi : currentObjkey+1
+      spilitPrimitives2DVector = extractSubMatrix(primitives2DVector, currentkey, 0, currentObjkey+2, laneNum-1);
       // std::cout << "currentObjkey : " << currentObjkey << std::endl;
       // std::cout << "currentObjlane : " << currentObjlane << std::endl;
       // std::cout << "current lane id  : " << currentObjLaneletId << std::endl;
@@ -304,16 +306,16 @@ private:
       route_msg_.header.stamp = this->get_clock()->now();
       route_msg_.header.frame_id = "map";
       route_msg_.start_pose = pose_msg_->pose;
-
+// key 그대로 idx로 사용
       std::cout << "currentObjkey : " << currentObjkey << std::endl;
-      route_msg_.goal_pose.position.x = goalPosition_x2DVec[currentObjkey][currentObjlane]; 
-      route_msg_.goal_pose.position.y = goalPosition_y2DVec[currentObjkey][currentObjlane]; 
+      route_msg_.goal_pose.position.x = goalPosition_x2DVec[currentObjkey+1][currentObjlane]; 
+      route_msg_.goal_pose.position.y = goalPosition_y2DVec[currentObjkey+1][currentObjlane]; 
       route_msg_.goal_pose.position.z = 0.0;
           
       route_msg_.goal_pose.orientation.x = 0.0;
       route_msg_.goal_pose.orientation.y = 0.0;
-      route_msg_.goal_pose.orientation.z = goalOrientation_z[currentObjkey];  
-      route_msg_.goal_pose.orientation.w = goalOrientation_w[currentObjkey];
+      route_msg_.goal_pose.orientation.z = goalOrientation_z[currentObjkey+1];  
+      route_msg_.goal_pose.orientation.w = goalOrientation_w[currentObjkey+1];
 
       for (const auto &out_lane_id : spilitPrimitives2DVector)
       {
@@ -335,6 +337,10 @@ private:
       route_pub_->publish(route_msg_);
       lastlane = currentlane;
       std::cout << "Lane Change trajectory publish" << std::endl;
+    }
+    else
+    {
+      std::cout << "Detection falut !" << std::endl;
     }
   }
 };
